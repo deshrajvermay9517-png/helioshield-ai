@@ -1,5 +1,7 @@
 # HelioShield AI
 
+[![CI](https://github.com/deshrajvermay9517-png/helioshield-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/deshrajvermay9517-png/helioshield-ai/actions/workflows/ci.yml)
+
 > Explainable AI that turns space-weather signals into safer, evidence-backed launch decisions.
 
 HelioShield AI is a working proof of concept for the **August 2026 AI Builders Challenge with IBM Bob** under the **Advance Space Exploration with AI** theme.
