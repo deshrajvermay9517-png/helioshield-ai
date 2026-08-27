@@ -56,9 +56,65 @@ The project fits the theme by converting data-heavy space-weather feeds into act
 
 ## How IBM Bob was used
 
-> **Submission owner action required:** Complete the material IBM Bob development pass in [`docs/IBM-BOB-HANDOFF.md`](docs/IBM-BOB-HANDOFF.md), then replace this note with the actual prompts, changes, tests, and evidence from that session. Do not claim Bob work that was not performed.
+IBM Bob was the primary development tool for the hardening and validation pass on this
+repository, carried out on the `bob-hardening` branch. The work is recorded in
+[`helioshield-hardening-plan.md`](helioshield-hardening-plan.md) and covers the
+following prompts and outcomes:
 
-The repository includes a scoped IBM Bob workflow covering architecture review, data-adapter hardening, model tests, responsible-AI documentation, and final build verification. This creates an auditable record of Bob's contribution instead of a generic usage statement.
+**Prompt 1 — Plan mode** (`helioshield-hardening-plan.md`)\
+Bob was asked to inspect `README.md`, `docs/ARCHITECTURE.md`, `docs/MODEL-CARD.md`,
+`app/api/space-weather/route.ts`, `lib/risk-engine.ts`, and `app/page.tsx`, then
+produce a concrete hardening plan without changing any files. Bob identified the
+single-catch-all NOAA fetch as the primary resilience gap, the absence of data
+freshness handling, the lack of model-equation verification tests, and zero direct
+test coverage for the API adapter. The resulting plan was reviewed and approved before
+any code was changed.
+
+**Prompt 2 — Agent mode** (material implementation)\
+Bob implemented all five sub-tasks from the approved plan on the `bob-hardening` branch:
+
+1. **NOAA payload validation** — `app/api/space-weather/route.ts` was rewritten to
+   validate each feed's HTTP status, `content-type` header, and payload shape
+   independently using `validateTable` and `validateRecordArray` helpers. Errors are
+   caught per-feed with `fetchKp` / `fetchRecords` wrappers.
+
+2. **Per-signal degradation** — a failed feed now falls back only that signal to its
+   default value. The response carries `mode: "live" | "partial" | "demo"` and a
+   `degradedFeeds: string[]` list. The original all-or-nothing `try/catch` that
+   replaced every signal on any failure was removed.
+
+3. **Data freshness** — the route computes `ageMinutes` from `observedAt` vs wall
+   clock and sets `dataQuality: "fresh" | "stale" | "unknown"` using a
+   `STALE_THRESHOLD_MINUTES = 30` named constant. The source-pill in the mission
+   console renders "NOAA live · stale data" or "NOAA partial (… degraded)" as
+   appropriate. The evidence trace carries the stale age or degraded feed names.
+
+4. **Model validation tests** — `tests/risk-engine-model.test.mjs` (new, 26 tests)
+   verifies the published HS-XR v0.3 equation against three hand-calculated reference
+   points, all six tone-transition boundaries (Kp, proton, X-ray), all three decision
+   thresholds, the confidence clamp, the crewed ≥ lunar ≥ satellite risk ordering,
+   and `buildMissionBrief` output for every decision × profile × source-label
+   combination.
+
+5. **API adapter tests** — `tests/space-weather-api.test.mjs` (new, 7 tests) covers
+   all-feeds-healthy, per-feed HTTP 500 degradation, malformed-JSON degradation,
+   all-feeds-fail demo fallback, stale-timestamp detection, and failed-forecast
+   fallback — all without live network I/O, using `globalThis.fetch` mocking.
+
+**Verified results on the `bob-hardening` branch:**
+
+- `node --test tests/risk-engine.test.mjs tests/risk-engine-model.test.mjs tests/space-weather-api.test.mjs` — **37 pass, 0 fail**
+- ESLint on changed and new files — **0 errors, 0 warnings**
+- TypeScript (`tsc --noEmit`) — **0 new errors** introduced; 4 pre-existing
+  Cloudflare Worker typing errors on `db/index.ts` and `worker/index.ts` were
+  present on `main` before this session and are unchanged
+- `npm run build` requires the ChatGPT Sites Linux CI environment (`bash`, `vinext`,
+  GNU `timeout`) and cannot be run on the local Windows machine; the build is
+  verified by the CI pipeline on push
+
+The two tests that require the `dist/` build artefact (`rendered-html.test.mjs` and
+the CSS scan in `ui-components.test.mjs`) were already failing on `main` for the same
+reason before this session; no regression was introduced.
 
 ## Product flow
 
@@ -113,15 +169,21 @@ No API key is required. The server route fetches public NOAA data and automatica
 ## Repository map
 
 ```text
-app/page.tsx                     Mission console and interactions
-app/api/space-weather/route.ts  NOAA adapter with safe fallback
-lib/risk-engine.ts              Explainable probability model
-docs/ARCHITECTURE.md            Technical design and decisions
-docs/MODEL-CARD.md              Model behavior, thresholds, limits
-docs/IBM-BOB-HANDOFF.md         Required authentic Bob workflow
-docs/DEMO-SCRIPT.md             Timed public-video script
-docs/SUBMISSION.md              Copy-ready challenge submission
-docs/SUBMISSION-CHECKLIST.md    Exact remaining owner actions
+app/page.tsx                          Mission console and interactions
+app/api/space-weather/route.ts        NOAA adapter — per-feed validation, freshness, partial mode
+lib/risk-engine.ts                    Explainable probability model
+tests/risk-engine.test.mjs            Behavioural risk-engine tests
+tests/risk-engine-model.test.mjs      Model-equation and threshold validation tests (new)
+tests/space-weather-api.test.mjs      API adapter unit tests with fetch mocking (new)
+tests/rendered-html.test.mjs          Full-worker HTML smoke test (requires CI build)
+tests/ui-components.test.mjs          CSS and component tests (requires CI build)
+helioshield-hardening-plan.md         Bob Plan-mode hardening plan
+docs/ARCHITECTURE.md                  Technical design and decisions
+docs/MODEL-CARD.md                    Model behavior, thresholds, limits
+docs/IBM-BOB-HANDOFF.md              IBM Bob workflow record
+docs/DEMO-SCRIPT.md                   Timed public-video script
+docs/SUBMISSION.md                    Copy-ready challenge submission
+docs/SUBMISSION-CHECKLIST.md          Exact remaining owner actions
 ```
 
 ## Responsible AI
