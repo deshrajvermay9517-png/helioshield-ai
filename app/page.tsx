@@ -44,8 +44,14 @@ import {
 
 type ForecastWindow = { time: string; kp: number };
 type WeatherPayload = {
-  mode: "live" | "demo";
+  mode: "live" | "demo" | "partial";
   observedAt: string;
+  /** Age of the most recent observation in minutes. 0 when unknown. */
+  ageMinutes: number;
+  /** "fresh" = within threshold; "stale" = older than threshold; "unknown" = demo or unparseable. */
+  dataQuality: "fresh" | "stale" | "unknown";
+  /** Names of NOAA feeds that fell back to default values this cycle. */
+  degradedFeeds: string[];
   signals: SpaceWeatherSignals;
   forecast: ForecastWindow[];
 };
@@ -53,6 +59,9 @@ type WeatherPayload = {
 const fallbackData: WeatherPayload = {
   mode: "demo",
   observedAt: "",
+  ageMinutes: 0,
+  dataQuality: "unknown",
+  degradedFeeds: [],
   signals: { kp: 3.4, protonFlux: 0.82, xrayFlux: 4.6e-7 },
   forecast: [3.4, 4.1, 3.8, 2.9, 2.4, 2.1, 2.8, 3.2].map((kp, index) => ({
     time: new Date(Date.UTC(2026, 7, 27, index * 3)).toISOString(),
@@ -145,9 +154,15 @@ export default function Home() {
       buildMissionBrief(
         assessment,
         profile,
-        weather.mode === "live" ? "NOAA live feed" : "validated demo scenario",
+        weather.mode === "live" && weather.dataQuality === "stale"
+          ? `NOAA live feed (stale — ${weather.ageMinutes} min old)`
+          : weather.mode === "live"
+            ? "NOAA live feed"
+            : weather.mode === "partial"
+              ? `NOAA partial feed (${weather.degradedFeeds.join(", ")} degraded)`
+              : "validated demo scenario",
       ),
-    [assessment, profile, weather.mode],
+    [assessment, profile, weather.mode, weather.dataQuality, weather.ageMinutes, weather.degradedFeeds],
   );
 
   const bestWindowIndex = useMemo(() => {
@@ -172,9 +187,17 @@ export default function Home() {
           <a href="#model-card">Model card</a>
           <a href="#sources">Sources</a>
         </nav>
-        <div className={`source-pill ${weather.mode}`}>
+        <div className={`source-pill ${weather.mode === "partial" ? "partial" : weather.mode} ${weather.dataQuality === "stale" ? "stale" : ""}`}>
           <span className="pulse-dot" />
-          {loading ? "Syncing signals" : weather.mode === "live" ? "NOAA live" : "Demo-safe mode"}
+          {loading
+            ? "Syncing signals"
+            : weather.mode === "live" && weather.dataQuality === "stale"
+              ? "NOAA live · stale data"
+              : weather.mode === "live"
+                ? "NOAA live"
+                : weather.mode === "partial"
+                  ? `NOAA partial (${weather.degradedFeeds.join(", ")} degraded)`
+                  : "Demo-safe mode"}
         </div>
       </header>
 
